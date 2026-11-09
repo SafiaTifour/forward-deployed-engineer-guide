@@ -1,0 +1,73 @@
+name: docs-checks
+
+on:
+  push:
+    paths:
+      - "**/*.md"
+      - "**/*.jsonl"
+  pull_request:
+    paths:
+      - "**/*.md"
+      - "**/*.jsonl"
+
+jobs:
+  validate-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate JSONL and link references
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path('.')
+          issues = []
+
+          # Validate JSONL structure and duplicate IDs.
+          seen = set()
+          jsonl_files = list(root.rglob('*.jsonl'))
+          for jsonl_file in jsonl_files:
+              with open(jsonl_file, 'r', encoding='utf-8') as fh:
+                  for line_no, line in enumerate(fh, 1):
+                      text = line.strip()
+                      if not text:
+                          continue
+                      try:
+                          obj = json.loads(text)
+                      except json.JSONDecodeError as exc:
+                          issues.append(f'{jsonl_file}:{line_no}: invalid JSON: {exc.msg}')
+                          continue
+                      case_id = obj.get('id')
+                      if case_id in seen:
+                          issues.append(f'{jsonl_file}:{line_no}: duplicate id {case_id!r}')
+                      seen.add(case_id)
+
+          # Validate markdown relative links are not obviously broken.
+          markdown_files = list(root.rglob('*.md'))
+          for md in markdown_files:
+              text = md.read_text(encoding='utf-8')
+              for target in [t for t in text.split('](') if ')']:
+                  part = target.split(')', 1)[0]
+                  if part.startswith(('http://', 'https://', '#', 'mailto:')):
+                      continue
+                  rel = part.strip()
+                  path = (md.parent / rel).resolve()
+                  if not path.exists():
+                      issues.append(f'{md}: missing linked target {rel}')
+
+          if issues:
+              for issue in issues:
+                  print(issue)
+              raise SystemExit(1)
+
+          print(f'Validated {len(jsonl_files)} JSONL files and {len(markdown_files)} markdown files.')
+          PY
