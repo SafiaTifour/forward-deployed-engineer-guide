@@ -3,10 +3,12 @@ name: docs-checks
 on:
   push:
     paths:
+      - ".github/workflows/**"
       - "**/*.md"
       - "**/*.jsonl"
   pull_request:
     paths:
+      - ".github/workflows/**"
       - "**/*.md"
       - "**/*.jsonl"
 
